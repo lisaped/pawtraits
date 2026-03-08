@@ -2,7 +2,9 @@
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "framework": "vite",
-  "rewrites": [
-    { "source": "/api/(.*)", "destination": "/api/$1" }
-  ]
+  "functions": {
+    "api/generate-portrait.js": { "maxDuration": 10 },
+    "api/portrait-status.js":   { "maxDuration": 10 },
+    "api/describe-pet.js":      { "maxDuration": 10 }
+  }
 }
