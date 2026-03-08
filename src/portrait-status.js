@@ -1,0 +1,58 @@
+export const config = { maxDuration: 10 };
+
+export default async function handler(req, res) {
+  if (req.method !== "GET") return res.status(405).json({ error: "Method not allowed" });
+
+  const { requestId } = req.query;
+  if (!requestId) return res.status(400).json({ error: "Missing requestId" });
+
+  const FAL_KEY = process.env.FAL_API_KEY;
+  if (!FAL_KEY) return res.status(500).json({ error: "FAL_API_KEY not configured" });
+
+  try {
+    // Check queue status
+    const statusResp = await fetch(
+      `https://queue.fal.run/fal-ai/flux/dev/image-to-image/requests/${requestId}/status`,
+      { headers: { "Authorization": `Key ${FAL_KEY}` } }
+    );
+
+    if (!statusResp.ok) {
+      return res.status(500).json({ error: "Failed to check status" });
+    }
+
+    const statusData = await statusResp.json();
+    const status = statusData.status; // "IN_QUEUE" | "IN_PROGRESS" | "COMPLETED" | "FAILED"
+
+    if (status === "COMPLETED") {
+      // Fetch the actual result
+      const resultResp = await fetch(
+        `https://queue.fal.run/fal-ai/flux/dev/image-to-image/requests/${requestId}`,
+        { headers: { "Authorization": `Key ${FAL_KEY}` } }
+      );
+
+      if (!resultResp.ok) {
+        return res.status(500).json({ error: "Failed to fetch result" });
+      }
+
+      const resultData = await resultResp.json();
+      const imageUrl = resultData?.images?.[0]?.url;
+
+      if (!imageUrl) {
+        return res.status(500).json({ error: "No image in result" });
+      }
+
+      return res.status(200).json({ status: "COMPLETED", imageUrl });
+    }
+
+    if (status === "FAILED") {
+      return res.status(500).json({ status: "FAILED", error: "Generation failed on fal.ai" });
+    }
+
+    // Still processing
+    return res.status(200).json({ status: status || "IN_QUEUE" });
+
+  } catch (err) {
+    console.error("Poll error:", err.message);
+    return res.status(500).json({ error: err.message });
+  }
+}

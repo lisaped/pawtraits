@@ -1,4 +1,4 @@
-export const config = { maxDuration: 60 };
+export const config = { maxDuration: 10 };
 
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
@@ -12,7 +12,7 @@ export default async function handler(req, res) {
   try {
     // Step 1: Upload image to fal.ai storage
     const imageBuffer = Buffer.from(imageBase64, "base64");
-    const uploadResp = await fetch("https://fal.run/fal-ai/storage/upload", {
+    const uploadResp = await fetch("https://storage.fal.run", {
       method: "POST",
       headers: {
         "Authorization": `Key ${FAL_KEY}`,
@@ -22,15 +22,17 @@ export default async function handler(req, res) {
     });
 
     if (!uploadResp.ok) {
-      const err = await uploadResp.text();
-      console.error("Upload error:", err);
-      return res.status(500).json({ error: "Failed to upload image to fal.ai" });
+      const errText = await uploadResp.text();
+      console.error("Upload failed:", errText);
+      return res.status(500).json({ error: "Failed to upload image" });
     }
 
-    const { url: imageUrl } = await uploadResp.json();
+    const uploadData = await uploadResp.json();
+    const imageUrl = uploadData.url;
+    if (!imageUrl) return res.status(500).json({ error: "No URL from storage upload" });
 
-    // Step 2: Generate styled portrait using flux image-to-image
-    const genResp = await fetch("https://fal.run/fal-ai/flux/dev/image-to-image", {
+    // Step 2: Submit to fal.ai queue — returns immediately with request_id
+    const queueResp = await fetch("https://queue.fal.run/fal-ai/flux/dev/image-to-image", {
       method: "POST",
       headers: {
         "Authorization": `Key ${FAL_KEY}`,
@@ -39,31 +41,28 @@ export default async function handler(req, res) {
       body: JSON.stringify({
         image_url: imageUrl,
         prompt: `portrait of a pet, ${prompt}, professional art, high quality, masterpiece`,
-        strength: 0.8,
+        strength: 0.85,
         num_inference_steps: 28,
         guidance_scale: 3.5,
         num_images: 1,
         image_size: "square_hd",
+        enable_safety_checker: false,
       }),
     });
 
-    if (!genResp.ok) {
-      const err = await genResp.text();
-      console.error("Generation error:", err);
-      return res.status(500).json({ error: "Image generation failed" });
+    if (!queueResp.ok) {
+      const errText = await queueResp.text();
+      console.error("Queue submit failed:", errText);
+      return res.status(500).json({ error: "Failed to queue generation job" });
     }
 
-    const genData = await genResp.json();
-    const outputUrl = genData?.images?.[0]?.url;
+    const { request_id } = await queueResp.json();
+    if (!request_id) return res.status(500).json({ error: "No request_id returned" });
 
-    if (!outputUrl) {
-      return res.status(500).json({ error: "No image returned from fal.ai" });
-    }
-
-    return res.status(200).json({ imageUrl: outputUrl });
+    return res.status(200).json({ requestId: request_id });
 
   } catch (err) {
-    console.error("fal.ai error:", err);
-    return res.status(500).json({ error: "Generation service error" });
+    console.error("Submit error:", err.message);
+    return res.status(500).json({ error: err.message || "Submission failed" });
   }
 }
