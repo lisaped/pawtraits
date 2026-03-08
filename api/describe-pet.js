@@ -1,15 +1,8 @@
-export const config = { maxDuration: 30 };
+module.exports = async function handler(req, res) {
+  if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
-export default async function handler(req, res) {
-  if (req.method !== "POST") {
-    return res.status(405).json({ error: "Method not allowed" });
-  }
-
-  const { imageBase64, mediaType } = req.body;
-
-  if (!imageBase64 || !mediaType) {
-    return res.status(400).json({ error: "Missing imageBase64 or mediaType" });
-  }
+  const { imageBase64, mediaType } = req.body || {};
+  if (!imageBase64 || !mediaType) return res.status(400).json({ error: "Missing imageBase64 or mediaType" });
 
   try {
     const response = await fetch("https://api.anthropic.com/v1/messages", {
@@ -25,14 +18,8 @@ export default async function handler(req, res) {
         messages: [{
           role: "user",
           content: [
-            {
-              type: "image",
-              source: { type: "base64", media_type: mediaType, data: imageBase64 }
-            },
-            {
-              type: "text",
-              text: "Describe this pet in 2 warm, poetic sentences as if writing marketing copy for a luxury portrait — mention breed if identifiable, personality suggested by expression, and one charming physical detail. Be concise and enchanting."
-            }
+            { type: "image", source: { type: "base64", media_type: mediaType, data: imageBase64 } },
+            { type: "text", text: "Describe this pet in 2 warm, poetic sentences as if writing marketing copy for a luxury portrait — mention breed if identifiable, personality suggested by expression, and one charming physical detail. Be concise and enchanting." }
           ]
         }]
       })
@@ -43,7 +30,7 @@ export default async function handler(req, res) {
     return res.status(200).json({ description });
 
   } catch (err) {
-    console.error("Anthropic API error:", err);
-    return res.status(500).json({ error: "Failed to generate description" });
+    console.error("describe-pet error:", err.message);
+    return res.status(500).json({ error: err.message });
   }
-}
+};
